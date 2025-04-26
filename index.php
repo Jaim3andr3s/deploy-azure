@@ -1,100 +1,211 @@
+<?php
+// Activar errores visibles
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+echo "<h2>Validando conexión a bases de datos...</h2>";
+
+
+// --- Función de conexión MySQL con SSL ---
+function getMySqlConnection() {
+    $host = "10.170.6.4";
+    $user = "jgil9";
+    $pass = "Papijaime123";
+    $db   = "";
+    $port = 3306;
+
+    $con = mysqli_init();
+    mysqli_ssl_set($con, NULL, NULL, NULL, NULL, NULL);
+    mysqli_real_connect(
+        $con,
+        $host,
+        $user,
+        $pass,
+        $db,
+        $port,
+        NULL,
+        MYSQLI_CLIENT_SSL
+    );
+
+    if (mysqli_connect_errno()) {
+        die("<div class='message error'>❌ Error MySQL (SSL): " . mysqli_connect_error() . "</div>");
+    }
+    return $con;
+}
+
+// --- Función de registro ---
+function registerUser($nombre, $username, $password) {
+    $con = getMySqlConnection();
+    // Verificar existencia
+    $stmt = $con->prepare("SELECT id FROM usuarios WHERE usuario = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $stmt->store_result();
+    if ($stmt->num_rows > 0) {
+        echo "<div class='message error'>❌ El usuario '{$username}' ya existe.</div>";
+        $stmt->close();
+        $con->close();
+        return;
+    }
+    $stmt->close();
+    // Insertar con hash
+    $hash = password_hash($password, PASSWORD_DEFAULT);
+    $stmt = $con->prepare("INSERT INTO usuarios (nombre, usuario, contrasena) VALUES (?, ?, ?)");
+    $stmt->bind_param("sss", $nombre, $username, $hash);
+    if ($stmt->execute()) {
+        echo "<div class='message success'>✅ Usuario '{$username}' registrado correctamente.</div>";
+    } else {
+        echo "<div class='message error'>❌ Error al registrar: " . $stmt->error . "</div>";
+    }
+    $stmt->close();
+    $con->close();
+}
+
+// --- Función de login ---
+function loginUser($username, $password) {
+    $con = getMySqlConnection();
+    // Obtener hash
+    $stmt = $con->prepare("SELECT contrasena FROM usuarios WHERE usuario = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $stmt->bind_result($hash);
+    if (!$stmt->fetch()) {
+        echo "<div class='message error'>❌ Usuario '{$username}' no encontrado.</div>";
+        $stmt->close();
+        $con->close();
+        return;
+    }
+    $stmt->close();
+    // Verificar contraseña
+    if (password_verify($password, $hash)) {
+        echo "<div class='message success'>✅ Login exitoso. ¡Bienvenido, {$username}!</div>";
+    } else {
+        echo "<div class='message error'>❌ Contraseña incorrecta.</div>";
+    }
+    $con->close();
+}
+
+// --- Lógica de recepción de formulario ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action   = $_POST['action']   ?? '';
+    $nombre   = trim($_POST['nombre']   ?? '');
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
+
+    if ($action === 'register') {
+        registerUser($nombre, $username, $password);
+    } elseif ($action === 'login') {
+        loginUser($username, $password);
+    } else {
+        echo "<div class='message error'>⚠ Acción inválida.</div>";
+    }
+    exit;
+}
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aplicación PHP + MySQL en Azure</title>
-    <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; margin: 0 auto; max-width: 800px; padding: 20px; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
-        th { background-color: #f2f2f2; }
-        form { background: #f9f9f9; padding: 20px; border-radius: 5px; }
-        input[type="text"] { width: 100%; padding: 8px; margin: 5px 0 15px; }
-        input[type="submit"] { background: #0078d4; color: white; border: none; padding: 10px 15px; cursor: pointer; }
-        .success { color: green; margin: 10px 0; }
-        .error { color: red; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Auth PHP en App Service</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 400px;
+      background: #fff;
+      margin: 0 auto;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      color: #555;
+    }
+    input[type="text"],
+    input[type="password"] {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      background: #007bff;
+      color: #fff;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #eee;
+      margin: 20px 0;
+    }
+    .message {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+    .message.success {
+      background: #e6ffed;
+      color: #2f6627;
+    }
+    .message.error {
+      background: #ffe6e6;
+      color: #a12f2f;
+    }
+  </style>
 </head>
 <body>
-    <h1>Registro de Usuarios</h1>
-    
-    <?php
-    // Configuración de conexión (mejor usar variables de entorno en producción)
-    $host = getenv('DB_HOST') ?: "newserversql.mysql.database.azure.com";
-    $username = getenv('DB_USER') ?: "Jgil9";
-    $password = getenv('DB_PASSWORD') ?: "Papijaime123";
-    $dbname = getenv('DB_NAME') ?: "prueba";
-
-    // Manejar el formulario de inserción
-    if ($_SERVER["REQUEST_METHOD"] == "POST") {
-        try {
-            $con = mysqli_init();
-            mysqli_ssl_set($con, NULL, NULL, "/var/www/html/BaltimoreCyberTrustRoot.crt.pem", NULL, NULL);
-            mysqli_real_connect($con, $host, $username, $password, $dbname, 3306, NULL, MYSQLI_CLIENT_SSL);
-
-            $nombre = htmlspecialchars($_POST['nombre']);
-            $correo = htmlspecialchars($_POST['correo']);
-
-            $stmt = $con->prepare("INSERT INTO usuarios (nombre, correo) VALUES (?, ?)");
-            $stmt->bind_param("ss", $nombre, $correo);
-            
-            if ($stmt->execute()) {
-                echo "<p class='success'>Usuario agregado correctamente.</p>";
-            } else {
-                echo "<p class='error'>Error al agregar usuario: " . $con->error . "</p>";
-            }
-            
-            $stmt->close();
-            $con->close();
-        } catch (Exception $e) {
-            echo "<p class='error'>Error de conexión: " . $e->getMessage() . "</p>";
-        }
-    }
-    ?>
-
-    <!-- Formulario para agregar usuarios -->
-    <form method="post" action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>">
-        <label for="nombre">Nombre:</label>
-        <input type="text" id="nombre" name="nombre" required>
-        
-        <label for="correo">Correo electrónico:</label>
-        <input type="text" id="correo" name="correo" required>
-        
-        <input type="submit" value="Registrar Usuario">
+  <div class="container">
+    <h2>Register</h2>
+    <form method="post">
+      <input type="hidden" name="action" value="register">
+      <label>Nombre:
+        <input type="text" name="nombre" required>
+      </label>
+      <label>Usuario:
+        <input type="text" name="username" required>
+      </label>
+      <label>Contraseña:
+        <input type="password" name="password" required>
+      </label>
+      <button type="submit">Registrar</button>
     </form>
 
-    <!-- Lista de usuarios registrados -->
-    <h2>Usuarios Registrados</h2>
-    <?php
-    try {
-        $con = mysqli_init();
-        mysqli_ssl_set($con, NULL, NULL, "/var/www/html/BaltimoreCyberTrustRoot.crt.pem", NULL, NULL);
-        mysqli_real_connect($con, $host, $username, $password, $dbname, 3306, NULL, MYSQLI_CLIENT_SSL);
+    <hr>
 
-        $result = $con->query("SELECT id, nombre, correo FROM usuarios ORDER BY id DESC");
-
-        if ($result->num_rows > 0) {
-            echo "<table>
-                <tr><th>ID</th><th>Nombre</th><th>Correo</th></tr>";
-            
-            while($row = $result->fetch_assoc()) {
-                echo "<tr>
-                    <td>" . htmlspecialchars($row['id']) . "</td>
-                    <td>" . htmlspecialchars($row['nombre']) . "</td>
-                    <td>" . htmlspecialchars($row['correo']) . "</td>
-                </tr>";
-            }
-            
-            echo "</table>";
-        } else {
-            echo "<p>No hay usuarios registrados aún.</p>";
-        }
-
-        $con->close();
-    } catch (Exception $e) {
-        echo "<p class='error'>Error al cargar usuarios: " . $e->getMessage() . "</p>";
-    }
-    ?>
+    <h2>Login</h2>
+    <form method="post">
+      <input type="hidden" name="action" value="login">
+      <label>Usuario:
+        <input type="text" name="username" required>
+      </label>
+      <label>Contraseña:
+        <input type="password" name="password" required>
+      </label>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
 </body>
 </html>
