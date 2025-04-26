@@ -1,33 +1,55 @@
 <?php
-// Datos de conexión
-$servername = "newserversql.mysql.database.azure.com";
-$username = "jgil9";
-$password = "Papijaime123";  // ← Cambia aquí
-$database = "prueba";   // ← Cambia aquí
+// Configuración de conexión
+$host = "newserversql.mysql.database.azure.com";
+$username = "jgil9";  // ¡Formato requerido!
+$password = "Papijaime123";
+$dbname = "prueba";
+$ssl_cert = "/home/site/wwwroot/BaltimoreCyberTrustRoot.crt.pem";
 
-// Crear conexión
-$conn = mysqli_connect($servername, $username, $password, $database);
+// Conexión con SSL forzado
+try {
+    $con = mysqli_init();
+    
+    // Configuración SSL crítica para Azure
+    mysqli_ssl_set(
+        $con,
+        NULL,
+        NULL,
+        $ssl_cert,
+        NULL,
+        NULL
+    );
+    
+    // Conexión real con parámetros explícitos
+    mysqli_real_connect(
+        $con,
+        $host,
+        $username,
+        $password,
+        $dbname,
+        3306,
+        NULL,
+        MYSQLI_CLIENT_SSL
+    );
 
-// Verificar conexión
-if (!$conn) {
-    die("Conexión fallida: " . mysqli_connect_error());
-}
-echo "¡Conexión exitosa a la base de datos!<br>";
-
-// Ejecutar una consulta de prueba
-$sql = "SELECT * FROM usuarios"; // Cambia "usuarios" por el nombre real de tu tabla
-$result = mysqli_query($conn, $sql);
-
-if (mysqli_num_rows($result) > 0) {
-    echo "<h1>Lista de Usuarios</h1>";
-    while($row = mysqli_fetch_assoc($result)) {
-        echo "ID: " . $row["id"]. " - Nombre: " . $row["nombre"]. " - Correo: " . $row["correo"]. "<br>";
+    if ($con->connect_error) {
+        throw new Exception("Error SSL: " . $con->connect_error);
     }
-} else {
-    echo "No se encontraron usuarios.";
+
+    // Consulta de ejemplo (usuarios registrados)
+    $result = $con->query("SELECT * FROM usuarios");
+    while($row = $result->fetch_assoc()) {
+        echo "ID: ".$row['id']." - Nombre: ".$row['nombre']."<br>";
+    }
+
+} catch (Exception $e) {
+    echo "<strong>Error mejorado:</strong> " . $e->getMessage();
+    
+    // Sugerencias específicas
+    echo "<ol>
+            <li>Verifica que el certificado SSL existe en $ssl_cert</li>
+            <li>Confirma que el usuario incluye @nombreservidor</li>
+            <li>Revisa las reglas de firewall en Azure Portal</li>
+          </ol>";
 }
-
-// Cerrar conexión
-mysqli_close($conn);
 ?>
-
