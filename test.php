@@ -5,7 +5,7 @@ echo "=== Prueba de conexión a Azure MySQL ===\n\n";
 
 // Configuración (usa variables de entorno en producción)
 $host = getenv('DB_HOST') ?: "newserversql.mysql.database.azure.com";
-$username = getenv('DB_USER') ?: "Jgil9@newserversql";
+$username = getenv('DB_USER') ?: "Jgil9";
 $password = getenv('DB_PASSWORD') ?: "Papijaime123";
 $dbname = getenv('DB_NAME') ?: "prueba";
 

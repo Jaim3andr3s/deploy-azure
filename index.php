@@ -22,7 +22,7 @@
     <?php
     // Configuración de conexión (mejor usar variables de entorno en producción)
     $host = getenv('DB_HOST') ?: "newserversql.mysql.database.azure.com";
-    $username = getenv('DB_USER') ?: "Jgil9@newserversql";
+    $username = getenv('DB_USER') ?: "Jgil9";
     $password = getenv('DB_PASSWORD') ?: "Papijaime123";
     $dbname = getenv('DB_NAME') ?: "prueba";
 
