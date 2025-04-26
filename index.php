@@ -1,111 +1,234 @@
 <?php
-// Configuración de conexión segura
-$host = getenv('DB_HOST') ?: "newserversql.mysql.database.azure.com";
-$username = getenv('DB_USER') ?: "jgil9";  // ¡Asegúrate de incluir @nombreservidor!
-$password = getenv('DB_PASSWORD') ?: "Papijaime123";
-$dbname = getenv('DB_NAME') ?: "prueba";
-$ssl_cert = "/home/site/wwwroot/BaltimoreCyberTrustRoot.crt.pem";
+// Activar errores visibles
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-// Estilo CSS mejorado
-echo '<style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-    th { background-color: #0078d4; color: white; }
-    tr:nth-child(even) { background-color: #f2f2f2; }
-    .error { color: red; margin: 10px 0; }
-    .login-form { max-width: 400px; margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
-    input[type="text"], input[type="password"] { width: 100%; padding: 8px; margin: 5px 0 15px; }
-    input[type="submit"] { background: #0078d4; color: white; border: none; padding: 10px 15px; cursor: pointer; }
-</style>';
+echo "<h2>Validando conexión a bases de datos...</h2>";
 
-// Función para conexión segura
-function connectDB() {
-    global $host, $username, $password, $dbname, $ssl_cert;
-    
+// --- Primero PostgreSQL (puerto 5432 explícito) ---
+$pg_host   = '10.167.2.4';
+$pg_port   = '5432';
+$pg_dbname = 'postgres';
+$pg_user   = 'rooot';
+$pg_pass   = 'Rut12345';
+
+$conn_str = sprintf(
+    'host=%s port=%s dbname=%s user=%s password=%s sslmode=require',
+    $pg_host,
+    $pg_port,
+    $pg_dbname,
+    $pg_user,
+    $pg_pass
+);
+
+$pg_conn = pg_connect($conn_str);
+if (!$pg_conn) {
+    $err = pg_last_error();
+    echo "<div class='message error'>❌ Error al conectar PostgreSQL: {$err}</div>";
+    exit;
+}
+pg_close($pg_conn);
+
+// --- Función de conexión MySQL con SSL ---
+function getMySqlConnection() {
+    $host = "10.167.0.4";
+    $user = "rooot";
+    $pass = "Rut12345";
+    $db   = "main";
+    $port = 3306;
+
     $con = mysqli_init();
-    if (!mysqli_ssl_set($con, NULL, NULL, $ssl_cert, NULL, NULL)) {
-        throw new Exception("Error configurando SSL");
+    mysqli_ssl_set($con, NULL, NULL, NULL, NULL, NULL);
+    mysqli_real_connect(
+        $con,
+        $host,
+        $user,
+        $pass,
+        $db,
+        $port,
+        NULL,
+        MYSQLI_CLIENT_SSL
+    );
+
+    if (mysqli_connect_errno()) {
+        die("<div class='message error'>❌ Error MySQL (SSL): " . mysqli_connect_error() . "</div>");
     }
-    
-    if (!mysqli_real_connect($con, $host, $username, $password, $dbname, 3306, NULL, MYSQLI_CLIENT_SSL)) {
-        throw new Exception("Error de conexión: " . mysqli_connect_error());
-    }
-    
     return $con;
 }
 
-// Procesar login
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login'])) {
-    try {
-        $con = connectDB();
-        $user = $_POST['username'];
-        $pass = $_POST['password'];
-        
-        // Consulta preparada para seguridad
-        $stmt = $con->prepare("SELECT * FROM usuarios WHERE nombre = ? AND contrasena = ?");
-        $stmt->bind_param("ss", $user, $pass);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows > 0) {
-            echo "<p>¡Login exitoso! Bienvenido $user</p>";
-            // Aquí podrías iniciar sesión con session_start()
-        } else {
-            echo "<p class='error'>Credenciales incorrectas</p>";
-        }
-        
+// --- Función de registro ---
+function registerUser($nombre, $username, $password) {
+    $con = getMySqlConnection();
+    // Verificar existencia
+    $stmt = $con->prepare("SELECT id FROM usuarios WHERE usuario = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $stmt->store_result();
+    if ($stmt->num_rows > 0) {
+        echo "<div class='message error'>❌ El usuario '{$username}' ya existe.</div>";
         $stmt->close();
         $con->close();
-    } catch (Exception $e) {
-        echo "<p class='error'>Error: " . $e->getMessage() . "</p>";
+        return;
     }
+    $stmt->close();
+    // Insertar con hash
+    $hash = password_hash($password, PASSWORD_DEFAULT);
+    $stmt = $con->prepare("INSERT INTO usuarios (nombre, usuario, contrasena) VALUES (?, ?, ?)");
+    $stmt->bind_param("sss", $nombre, $username, $hash);
+    if ($stmt->execute()) {
+        echo "<div class='message success'>✅ Usuario '{$username}' registrado correctamente.</div>";
+    } else {
+        echo "<div class='message error'>❌ Error al registrar: " . $stmt->error . "</div>";
+    }
+    $stmt->close();
+    $con->close();
 }
 
-// Mostrar formulario de login
-echo '<div class="login-form">
-        <h2>Login</h2>
-        <form method="post">
-            Usuario: <input type="text" name="username" required><br>
-            Contraseña: <input type="password" name="password" required><br>
-            <input type="submit" name="login" value="Iniciar sesión">
-        </form>
-      </div>';
-
-// Mostrar tabla de usuarios
-try {
-    $con = connectDB();
-    $result = $con->query("SELECT id, nombre, correo FROM usuarios ORDER BY id DESC");
-    
-    echo '<h2>Usuarios Registrados</h2>';
-    
-    if ($result->num_rows > 0) {
-        echo '<table>
-                <tr><th>ID</th><th>Nombre</th><th>Correo</th></tr>';
-        
-        while($row = $result->fetch_assoc()) {
-            echo '<tr>
-                    <td>'.htmlspecialchars($row['id']).'</td>
-                    <td>'.htmlspecialchars($row['nombre']).'</td>
-                    <td>'.htmlspecialchars($row['correo']).'</td>
-                  </tr>';
-        }
-        
-        echo '</table>';
-    } else {
-        echo '<p>No hay usuarios registrados</p>';
+// --- Función de login ---
+function loginUser($username, $password) {
+    $con = getMySqlConnection();
+    // Obtener hash
+    $stmt = $con->prepare("SELECT contrasena FROM usuarios WHERE usuario = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $stmt->bind_result($hash);
+    if (!$stmt->fetch()) {
+        echo "<div class='message error'>❌ Usuario '{$username}' no encontrado.</div>";
+        $stmt->close();
+        $con->close();
+        return;
     }
-    
+    $stmt->close();
+    // Verificar contraseña
+    if (password_verify($password, $hash)) {
+        echo "<div class='message success'>✅ Login exitoso. ¡Bienvenido, {$username}!</div>";
+    } else {
+        echo "<div class='message error'>❌ Contraseña incorrecta.</div>";
+    }
     $con->close();
-} catch (Exception $e) {
-    echo '<p class="error">Error al cargar usuarios: ' . $e->getMessage() . '</p>';
-    
-    // Mensaje de diagnóstico adicional
-    echo '<div style="background:#f8f8f8;padding:10px;margin-top:20px;">
-            <h4>Diagnóstico:</h4>
-            <p>Ruta certificado SSL: '.$ssl_cert.'</p>
-            <p>Usuario DB: '.$username.'</p>
-            <p>Host DB: '.$host.'</p>
-          </div>';
+}
+
+// --- Lógica de recepción de formulario ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action   = $_POST['action']   ?? '';
+    $nombre   = trim($_POST['nombre']   ?? '');
+    $username = trim($_POST['username'] ?? '');
+    $password = $_POST['password'] ?? '';
+
+    if ($action === 'register') {
+        registerUser($nombre, $username, $password);
+    } elseif ($action === 'login') {
+        loginUser($username, $password);
+    } else {
+        echo "<div class='message error'>⚠ Acción inválida.</div>";
+    }
+    exit;
 }
 ?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Auth PHP en App Service</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 400px;
+      background: #fff;
+      margin: 0 auto;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      color: #555;
+    }
+    input[type="text"],
+    input[type="password"] {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      padding: 10px;
+      border: none;
+      border-radius: 4px;
+      background: #007bff;
+      color: #fff;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #eee;
+      margin: 20px 0;
+    }
+    .message {
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+    .message.success {
+      background: #e6ffed;
+      color: #2f6627;
+    }
+    .message.error {
+      background: #ffe6e6;
+      color: #a12f2f;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Register</h2>
+    <form method="post">
+      <input type="hidden" name="action" value="register">
+      <label>Nombre:
+        <input type="text" name="nombre" required>
+      </label>
+      <label>Usuario:
+        <input type="text" name="username" required>
+      </label>
+      <label>Contraseña:
+        <input type="password" name="password" required>
+      </label>
+      <button type="submit">Registrar</button>
+    </form>
+
+    <hr>
+
+    <h2>Login</h2>
+    <form method="post">
+      <input type="hidden" name="action" value="login">
+      <label>Usuario:
+        <input type="text" name="username" required>
+      </label>
+      <label>Contraseña:
+        <input type="password" name="password" required>
+      </label>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>
